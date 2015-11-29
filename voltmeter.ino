@@ -72,10 +72,14 @@ void spi0_isr(void){
     {
       float voltage = (float)(buf[1] + (buf[2]<<8))/100.0;
       float current = (float)(buf[3] + (buf[4]<<8))/100.0;
-      Serial.print(voltage, 2);
-      Serial.print(" V ");
-      Serial.print(current, 2);
-      Serial.println(" A");
+      /* Only print to serial port if it is used in host */
+      if (Serial.dtr())
+      {
+        Serial.print(voltage, 2);
+        Serial.print(" V ");
+        Serial.print(current, 2);
+        Serial.println(" A");
+      }
       count = 0;
     }
     digitalWrite(led, LOW);

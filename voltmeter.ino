@@ -1,87 +1,63 @@
-/* 
-Chines wireless current/voltage meter receiver
-2015 Kimmo Lindholm
+#include <t3spi.h>
 
-Thanks to Nick Gammon, for SPI slave code http://www.gammon.com.au/spi 
-*/
+//Initialize T3SPI class as SPI_SLAVE
+T3SPI SPI_SLAVE;
+
+//The number of integers per data packet
+//MUST be the same as defined on the MASTER device
+#define dataLength  256
+
+//Initialize the arrays for incoming data
+//volatile uint8_t data[dataLength] = {};
+volatile uint16_t data[dataLength] = {};
 
 
-#include <SPI.h>
-
-unsigned char buf [100];
-volatile byte pos;
-volatile boolean process_it;
-int count;
-
-void setup (void)
-{
-  Serial.begin (115200);
-  SPCR |= bit (SPE);
-
-  pinMode(MISO, OUTPUT);
-
-  pos = 0;
-  process_it = false;
-  count = 10;
-
-  SPI.attachInterrupt();
+void setup(){
   
-  Serial.println("ready");
-
+  Serial.begin(115200);
+  
+  //Begin SPI in SLAVE (SCK pin, MOSI pin, MISO pin, CS pin)
+  SPI_SLAVE.begin_SLAVE(SCK, MOSI, MISO, CS0);
+  
+  //Set the CTAR0_SLAVE0 (Frame Size, SPI Mode)
+  //SPI_SLAVE.setCTAR_SLAVE(8, SPI_MODE0);
+  SPI_SLAVE.setCTAR_SLAVE(16, SPI_MODE0);
+  
+  //Enable the SPI0 Interrupt
+  NVIC_ENABLE_IRQ(IRQ_SPI0);
+  
 }
 
+void loop(){
 
+  //Capture the time before receiving data
+  if (SPI_SLAVE.dataPointer==0 && SPI_SLAVE.packetCT==0){
+    SPI_SLAVE.timeStamp1=micros();}  
+ 
+  //Capture the time when transfer is done
+  if (SPI_SLAVE.packetCT==1){
+    SPI_SLAVE.timeStamp2=micros();
 
-ISR (SPI_STC_vect)
-{
-byte c = SPDR; 
+    //Print data received & data sent
+    for (int i=0; i<dataLength; i++){
+      Serial.print("data[");
+      Serial.print(i);
+      Serial.print("]: ");
+      Serial.println(data[i]);
+      Serial.flush();}
   
-  if (pos < sizeof buf)
-  {
-    buf [pos++] = c;
-    if (pos > 10)
-      process_it = true;
-  }
+      //Print statistics for the previous transfer
+      SPI_SLAVE.printStatistics(dataLength); 
+   
+    //Reset the packet count   
+    SPI_SLAVE.packetCT=0;}
 }
 
-void loop (void)
-{
-  delay(2);
-  if (process_it)
-  {
-/*
-    // Debug prints
-    int i;
-    for (i=0 ; i<pos ; i++)
-    {
-      Serial.print (buf[i], HEX);
-      Serial.print (" ");
-    }
-    Serial.println();
-*/
-/*
-    Frame from current/voltage measurement unit is like:
-    40 40 40 A E6 4 1A 0 D 0 3 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 40 0 
-    
-    Check that the preamble matches, then extract voltage and current from
-    every 10th frame
-    
-    voltage and current is 16-bit value, LSB = 10mV (10mA)
-*/
-    if (buf[0] == 0x40 && buf[1] == 0x40 && buf[2] == 0x40)
-    {
-      if (++count >= 10)
-      {
-        float voltage = (float)(buf[4] + (buf[5]<<8))/100.0;
-        float current = (float)(buf[6] + (buf[7]<<8))/100.0;
-        Serial.print(voltage, 2);
-        Serial.print(" V ");
-        Serial.print(current, 2);
-        Serial.println(" A ");
-        count = 0;
-      }
-    }
-    pos = 0;
-    process_it = false;
-  }  
-}  
+//Interrupt Service Routine to handle incoming data
+void spi0_isr(void){
+  
+  //Function to handle data
+  //SPI_SLAVE.rx8 (data, dataLength);
+  SPI_SLAVE.rx16(data, dataLength);
+}
+
